@@ -43,7 +43,24 @@ exit 0 — all tests passed
 
 exit 1 — one or more tests failed
 
-This allows RNSE benchmarks to be integrated directly into CI pipelines or automated replication runs without modification.​
+This allows RNSE benchmarks to be integrated directly into CI pipelines or automated replication runs without modification.
+
+
+Engine Interface Assumptions
+The harness assumes a minimal scalar interface:
+
+engine.step(x_t: float) -> None
+
+engine.get_coherence() -> float
+
+At each timestep the harness passes a single scalar input value x_t into engine.step, and expects get_coherence to return a single scalar coherence value in 
+[
+0
+,
+1
+]
+[0,1]. Engines that operate on vectors or batches should internally reduce their state to a scalar coherence before returning it.
+​​
 
 ---
 
