@@ -29,15 +29,21 @@ This suite allows **any researcher** to:
 
 ---
 Randomness and Seeding
-RNSE operates on stochastic inputs by design: noise is treated as base material rather than a source of learned structure. As a result, the qualitative behavior of the engine and the pass/fail outcomes of all tests are invariant to specific noise realizations.
-For strict reproducibility and CI / lab workflows, the harness optionally exposes a random seed parameter. When provided, the global RNG is seeded at initialization to ensure deterministic noise generation. When omitted, RNSE defaults to unseeded stochastic operation.
+RNSE operates on stochastic inputs by design: noise is treated as base material rather than a source of learned structure. As a result, the qualitative behavior of the engine and the pass/fail outcomes of all tests are invariant to specific noise realizations.​
+
+For strict reproducibility and CI / lab workflows, the harness optionally exposes a random seed parameter. When provided, the global RNG is seeded at initialization to ensure deterministic noise generation. When omitted, RNSE defaults to unseeded stochastic operation.​
+
 Coherence Sampling Convention
-Unless otherwise stated, coherence is sampled post-update at each step of the RNSE recursion. That is, coherence measurements reflect the system state after the prediction/update cycle has been applied for that timestep. This convention is used consistently across the protocol descriptions and the harness implementation.
+Unless otherwise stated, coherence is sampled post-update at each step of the RNSE recursion. Coherence measurements therefore reflect the system state after the prediction/update cycle has been applied for that timestep. This convention is used consistently across the protocol descriptions and the harness implementation.​
+
 Test Outcomes and Exit Codes
 The benchmark harness aggregates results across all configured tests and returns a standard process exit code for automation:
+
 exit 0 — all tests passed
+
 exit 1 — one or more tests failed
-This allows RNSE benchmarks to be integrated directly into CI pipelines or automated replication runs without modification.
+
+This allows RNSE benchmarks to be integrated directly into CI pipelines or automated replication runs without modification.​
 
 ---
 
