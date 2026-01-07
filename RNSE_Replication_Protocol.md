@@ -1,6 +1,6 @@
 # RNSE Falsification & Replication Protocol v1.0
 
-**Author:** Elad Genieh  
+**Author:** Elad Genish  
 **Date:** January 2026  
 **Status:** Open for Independent Benchmarking  
 **License:** Protocol Public; RNSE Implementation Proprietary
