@@ -1,3 +1,10 @@
+Priority & Scope Notice
+This protocol is derived from and secondary to the RNSE framework.
+The tests herein are designed specifically to falsify pre-existing RNSE claims and are not presented as a standalone theory, benchmark, or independent framework.
+Any reuse or extension of this protocol should cite RNSE as the originating system whose claims motivated these tests.
+
+
+
 # RNSE-Falsification-Replication-Protocol-v1.0
 A complete, IP‑safe benchmark suite for RNSE that defines six falsifiable tests, standardised signals, and black‑box metrics so any engine can be evaluated against RNSE’s emergent coherence, entropy, irreversibility, redshift, and dark‑energy claims.
 # RNSE Falsification & Replication Protocol — Complete Benchmark Suite
