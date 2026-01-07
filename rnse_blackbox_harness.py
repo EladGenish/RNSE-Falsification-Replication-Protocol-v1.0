@@ -11,8 +11,12 @@ This harness:
   4. Outputs pass/fail verdicts and plots.
   5. Exports summary JSON and CSV for replication tracking.
 
+Coherence sampling convention:
+  - At each timestep t, the harness calls engine.step(x_t) and then records
+    coherence C_t = engine.get_coherence() *after* the step (post-step).
+
 Usage:
-  python rnse_blackbox_harness.py --engine my_engine_class --output ./results/
+  python rnse_blackbox_harness.py --engine my_engine_class --output ./results/ [--seed 123]
 
 NO RNSE INTERNALS EXPOSED. This is a pure interface specification.
 """
@@ -27,6 +31,32 @@ import argparse
 from pathlib import Path
 from datetime import datetime
 from abc import ABC, abstractmethod
+import sys
+
+
+# ============================================================================
+# GLOBAL RNG MANAGEMENT
+# ============================================================================
+
+class RNGManager:
+    """
+    Simple wrapper to give the whole harness a shared, reproducible RNG
+    when a seed is provided. If no seed is set, falls back to NumPy default.
+    """
+    _rng = None
+
+    @classmethod
+    def init(cls, seed=None):
+        if seed is not None:
+            cls._rng = np.random.RandomState(seed)
+        else:
+            cls._rng = np.random.RandomState()
+
+    @classmethod
+    def rng(cls):
+        if cls._rng is None:
+            cls.init(None)
+        return cls._rng
 
 
 # ============================================================================
@@ -34,7 +64,7 @@ from abc import ABC, abstractmethod
 # ============================================================================
 
 class SignalGenerator:
-    """Abstract base for signal generation."""
+    """Signal generation utilities using the shared RNG where applicable."""
     
     @staticmethod
     def sinusoid(f=1.0, duration=10.0, fs=100.0):
@@ -43,25 +73,33 @@ class SignalGenerator:
         return np.sin(2 * np.pi * f * t)
     
     @staticmethod
-    def sinusoid_plus_noise(f=3.0, A=0.5, sigma=0.5, duration=10.0, fs=100.0, seed=42):
-        """Sinusoid + Gaussian noise: x(t) = A·sin(2π·f·t) + σ·N(0,1)"""
-        rng = np.random.RandomState(seed)
+    def sinusoid_plus_noise(f=3.0, A=0.5, sigma=0.5, duration=10.0, fs=100.0):
+        """
+        Sinusoid + Gaussian noise: x(t) = A·sin(2π·f·t) + σ·N(0,1)
+
+        Noise is drawn from the global RNG to make runs reproducible
+        when --seed is set.
+        """
+        rng = RNGManager.rng()
         t = np.linspace(0, duration, int(fs * duration))
         signal = A * np.sin(2 * np.pi * f * t)
         noise = sigma * rng.randn(len(signal))
         return signal + noise
     
     @staticmethod
-    def pure_noise(duration=10.0, fs=100.0, seed=77):
+    def pure_noise(duration=10.0, fs=100.0):
         """Pure Gaussian noise: x(t) = N(0,1)"""
-        rng = np.random.RandomState(seed)
+        rng = RNGManager.rng()
         n_samples = int(fs * duration)
         return rng.randn(n_samples)
     
     @staticmethod
     def shuffled_signal(signal):
         """Shuffle a signal temporally (randomize order)."""
-        return np.random.permutation(signal)
+        rng = RNGManager.rng()
+        idx = np.arange(len(signal))
+        rng.shuffle(idx)
+        return signal[idx]
     
     @staticmethod
     def two_subsystems(phase_offset=0.0, f=3.0, duration=10.0, fs=100.0):
@@ -91,7 +129,7 @@ class SignalGenerator:
         # Phase 1: Sine
         signal[:phase1_len] = np.sin(2 * np.pi * 1.0 * t[:phase1_len])
         # Phase 2: Shock (noise)
-        rng = np.random.RandomState(42)
+        rng = RNGManager.rng()
         signal[phase1_len:phase1_len+shock_len] = 10 * rng.randn(shock_len)
         # Phase 3: Back to sine
         signal[phase1_len+shock_len:] = np.sin(2 * np.pi * 1.0 * t[phase1_len+shock_len:])
@@ -110,6 +148,12 @@ class BlackBoxEngine(ABC):
       - step(signal_value: float) -> None
       - get_coherence() -> float
       - get_output() -> float (optional)
+
+    Coherence sampling convention:
+      The harness calls:
+          engine.step(x_t)
+          c_t = engine.get_coherence()
+      so coherence is recorded post-step.
     """
     
     @abstractmethod
@@ -163,13 +207,21 @@ class RNSETestHarness:
         self.test_5_relational_redshift()
         self.test_6_dark_energy()
         
-        self.export_summary()
+        overall_pass = self.export_summary()
         print("\n" + "=" * 70)
         print("All tests complete. Results in:", self.output_dir)
         print("=" * 70)
+
+        # CI-friendly exit code: 0 on overall pass, 1 on fail
+        sys.exit(0 if overall_pass else 1)
     
     def run_test(self, test_id, signal, test_name, params=None):
-        """Generic test runner: feed signal, record coherence."""
+        """
+        Generic test runner: feed signal, record coherence.
+
+        Coherence sampling is post-step: for each x_t, we call engine.step(x_t)
+        and then query engine.get_coherence() as C_t.
+        """
         if params is None:
             params = {}
         
@@ -182,8 +234,8 @@ class RNSETestHarness:
         print(f"\n[{test_id}] {test_name}...", end=" ", flush=True)
         
         for val in signal:
-            engine.step(val)
-            c = engine.get_coherence()
+            engine.step(val)            # update internal state with x_t
+            c = engine.get_coherence()  # sample C_t post-step
             o = engine.get_output()
             coherence_trace.append(c)
             if o is not None:
@@ -192,7 +244,8 @@ class RNSETestHarness:
         coherence_trace = np.array(coherence_trace)
         output_trace = np.array(output_trace) if output_trace else None
         
-        print(f"✓ (C_mean={coherence_trace[-50:].mean():.3f})")
+        tail = coherence_trace[-window:] if len(coherence_trace) >= window else coherence_trace
+        print(f"✓ (C_mean={tail.mean():.3f})")
         
         return coherence_trace, output_trace
     
@@ -306,7 +359,7 @@ class RNSETestHarness:
         """TEST 2: Ordered signal vs. shuffled noise."""
         test_id = "TEST_2"
         
-        signal_ordered = SignalGenerator.sinusoid_plus_noise(seed=42)
+        signal_ordered = SignalGenerator.sinusoid_plus_noise()
         signal_shuffled = SignalGenerator.shuffled_signal(signal_ordered)
         
         C_ordered, _ = self.run_test(test_id, signal_ordered, "Entropy Gap (Ordered)")
@@ -538,15 +591,10 @@ class RNSETestHarness:
         
         signal = SignalGenerator.sinusoid(f=3.0)
         
-        # Engine A: high coherence (alpha=0.99)
-        engine_A = self.engine_factory()
-        # (Note: if engine has alpha parameter, set it here; otherwise just run as-is)
-        
-        # Engine B: lower coherence
-        engine_B = self.engine_factory()
-        
-        C_A, out_A = self.run_test(test_id, signal, "Redshift (Engine A, High Coherence)")
-        C_B, out_B = self.run_test(test_id, signal, "Redshift (Engine B, Lower Coherence)")
+        # Engine A and B: separate instances; any internal randomness should be
+        # driven by the same global RNG so differences reflect state, not noise.
+        C_A, out_A = self.run_test(test_id, signal, "Redshift (Engine A)")
+        C_B, out_B = self.run_test(test_id, signal, "Redshift (Engine B)")
         
         # Spectral analysis
         f, Pxx_A = periodogram(C_A[200:], fs=100.0)
@@ -571,8 +619,8 @@ class RNSETestHarness:
         # Plot
         fig, axes = plt.subplots(2, 2, figsize=(12, 8))
         
-        axes[0, 0].plot(C_A[200:500], color='cyan', label='A (High C)', alpha=0.8)
-        axes[0, 0].plot(C_B[200:500], color='orange', label='B (Low C)', alpha=0.8)
+        axes[0, 0].plot(C_A[200:500], color='cyan', label='A', alpha=0.8)
+        axes[0, 0].plot(C_B[200:500], color='orange', label='B', alpha=0.8)
         axes[0, 0].set_title("Coherence Traces (Zoom: t=200–500)")
         axes[0, 0].set_ylabel("C")
         axes[0, 0].legend()
@@ -727,12 +775,13 @@ class RNSETestHarness:
         }
     
     def export_summary(self):
-        """Export all results to JSON."""
+        """Export all results to JSON and return overall_pass."""
+        overall_pass = all(r.get('passed', False) for r in self.results.values())
         summary = {
             'timestamp': datetime.now().isoformat(),
             'protocol_version': '1.0',
             'tests': self.results,
-            'overall_pass': all(r.get('passed', False) for r in self.results.values()),
+            'overall_pass': overall_pass,
         }
         
         with open(self.output_dir / 'summary.json', 'w') as f:
@@ -743,6 +792,8 @@ class RNSETestHarness:
         for test_id, result in self.results.items():
             status = "✓ PASS" if result.get('passed') else "✗ FAIL"
             print(f"  {test_id}: {status}")
+        
+        return overall_pass
 
 
 # ============================================================================
@@ -753,27 +804,34 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="RNSE Black-Box Replication Harness")
     parser.add_argument("--engine", type=str, help="Name of engine class to test (must be importable)")
     parser.add_argument("--output", type=str, default="./rnse_results", help="Output directory")
+    parser.add_argument("--seed", type=int, default=None,
+                        help="Optional global random seed for all stochastic components")
     args = parser.parse_args()
+
+    # Initialize global RNG (optional reproducibility)
+    RNGManager.init(args.seed)
     
     # STUB: In practice, you'd import the engine dynamically.
-    # For now, raise a helpful error.
+    # For now, raise a helpful error if engine not provided.
     if not args.engine:
         print("""
         Usage:
-          python rnse_blackbox_harness.py --engine MyEngineClass --output ./results/
+          python rnse_blackbox_harness.py --engine MyModule.MyEngineClass --output ./results/ [--seed 123]
         
         Your engine class must:
           - Inherit from BlackBoxEngine
           - Implement step(signal_value) and get_coherence()
         
-        Example:
+        Example (manual wiring):
           from my_engine import MyEngine
+
           def engine_factory():
               return MyEngine(config={...})
           
           harness = RNSETestHarness(engine_factory, "./results/")
           harness.run_all_tests()
         """)
+        sys.exit(1)
     else:
         # Try to import dynamically (simplified example)
         try:
@@ -789,3 +847,4 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"Error loading engine: {e}")
             print("Ensure your engine class is properly importable and inherits from BlackBoxEngine.")
+            sys.exit(1)
