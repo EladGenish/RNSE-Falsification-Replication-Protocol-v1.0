@@ -4,6 +4,8 @@ The tests herein are designed specifically to falsify pre-existing RNSE claims a
 Any reuse or extension of this protocol should cite RNSE as the originating system whose claims motivated these tests.
 
 
+This test suite implements a replication protocol inspired by the relational time and coherence ideas proposed by Clinton Svancara. While all tests, harness code, and protocol are original, the theoretical motivation—on time, entropy, and relational memory—draws from his discussions on relational field theory, black holes, and coherence ceilings.
+
 
 # RNSE-Falsification-Replication-Protocol-v1.0
 A complete, IP‑safe benchmark suite for RNSE that defines six falsifiable tests, standardised signals, and black‑box metrics so any engine can be evaluated against RNSE’s emergent coherence, entropy, irreversibility, redshift, and dark‑energy claims.
